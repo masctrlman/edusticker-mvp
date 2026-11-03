@@ -32,14 +32,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cName = sanitizeName(childName) || (safeLang === "en" ? "Leo" : "Bảo An");
     const fName = sanitizeName(friendName) || (safeLang === "en" ? "Mia" : "Bo");
 
-    const apiKey = (process.env.META_API_KEY || "").trim();
-    if (!apiKey) {
+    const rawKey = (process.env.META_API_KEY || "").trim().replace(/^["']|["']$/g, "");
+    if (!rawKey) {
       return res.status(200).json({
         story: "⚠️ [Lỗi Cấu Hình]: Chưa tìm thấy META_API_KEY trong Vercel Environment Variables.",
         stickers: [],
         lesson: "Kiểm tra lại Vercel Settings -> Environment Variables."
       });
     }
+
+    // Tự động chuyển LLM_id_secret thành chuẩn LLM|id|secret của Meta Llama API
+    const pipeKey = rawKey.replace(/^LLM_(\d+)_/, "LLM|$1|");
+    const candidateKeys = Array.from(new Set([pipeKey, rawKey]));
 
     const ENDPOINT = "https://api.llama.com/v1/chat/completions";
 
@@ -81,7 +85,6 @@ Chỉ trả về duy nhất 1 đối tượng JSON hợp lệ (không bọc tron
   "lesson": "Bài học ý nghĩa rút ra từ câu chuyện"
 }`;
 
-    // Tự động thử lần lượt các mã Model ID chuẩn của Meta Llama API để tránh lỗi 400 do lệch hậu tố
     const candidateModels = [
       "Llama-4-Maverick-17B-128E-Instruct-FP8",
       "Llama-4-Maverick-17B-128E-Instruct",
@@ -92,37 +95,41 @@ Chỉ trả về duy nhất 1 đối tượng JSON hợp lệ (không bọc tron
     let lastErrorText = "";
     let successData: any = null;
 
-    for (const modelName of candidateModels) {
-      const resp = await fetch(ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: modelName,
-          messages: [
-            { role: "system", content: storySystem },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: `Create a 300-word interactive fairy tale for Child=${cName}, Friend=${fName}, Mode=${safeMode}, Lang=${safeLang}.` },
-                { type: "image_url", image_url: { url: imageBase64 } }
-              ]
-            }
-          ],
-          temperature: 0.75,
-          max_completion_tokens: 1500
-        })
-      });
+    outerLoop: for (const activeKey of candidateKeys) {
+      for (const modelName of candidateModels) {
+        const resp = await fetch(ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${activeKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: "system", content: storySystem },
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: `Create a 300-word interactive fairy tale for Child=${cName}, Friend=${fName}, Mode=${safeMode}, Lang=${safeLang}.` },
+                  { type: "image_url", image_url: { url: imageBase64 } }
+                ]
+              }
+            ],
+            temperature: 0.75,
+            max_completion_tokens: 1500
+          })
+        });
 
-      const text = await resp.text();
-      if (resp.ok) {
-        successData = JSON.parse(text);
-        break;
-      } else {
-        lastStatus = resp.status;
-        lastErrorText = text;
+        const text = await resp.text();
+        if (resp.ok) {
+          successData = JSON.parse(text);
+          break outerLoop;
+        } else {
+          lastStatus = resp.status;
+          lastErrorText = text;
+          // Nếu lỗi 401 (sai định dạng key), lập tức chuyển sang thử định dạng key tiếp theo
+          if (resp.status === 401) break;
+        }
       }
     }
 
@@ -130,7 +137,7 @@ Chỉ trả về duy nhất 1 đối tượng JSON hợp lệ (không bọc tron
       return res.status(200).json({
         story: `⚠️ [Meta API Error HTTP ${lastStatus}]: ${lastErrorText.slice(0, 350)}`,
         stickers: [],
-        lesson: "Hãy chụp màn hình dòng thông báo này gửi lại để kiểm tra."
+        lesson: "Nếu vẫn báo 401, hãy tạo lại API Key mới trên trang Meta Llama Developer và cập nhật vào Vercel Environment Variables."
       });
     }
 
@@ -144,7 +151,6 @@ Chỉ trả về duy nhất 1 đối tượng JSON hợp lệ (không bọc tron
     try {
       parsed = extractJSONObject(String(rawContent));
     } catch {
-      // Nếu AI trả về văn bản truyện trực tiếp mà không bọc JSON, vẫn hiển thị nguyên vẹn câu chuyện dài!
       return res.status(200).json({
         story: String(rawContent),
         stickers: [],
