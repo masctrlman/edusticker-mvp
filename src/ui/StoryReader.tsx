@@ -17,7 +17,8 @@ export default function StoryReader({
   function speakAsTeacher(text: string) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
+    const cleanText = text.replace(/\([^)]*\)/g, "");
+    const u = new SpeechSynthesisUtterance(cleanText);
     u.lang = lang === "en" ? "en-US" : "vi-VN";
     u.rate = 0.9;
     u.pitch = 1.1;
@@ -25,12 +26,24 @@ export default function StoryReader({
   }
 
   useEffect(() => {
-    if (story) speakAsTeacher(story);
+    if (story && !story.startsWith("⚠️")) {
+      speakAsTeacher(story);
+    }
   }, [story, lang]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ background: "#fff", padding: 20, borderRadius: 16, boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 18, lineHeight: 1.6 }}>
+      <div
+        style={{
+          background: "#fff",
+          padding: 20,
+          borderRadius: 16,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          fontSize: 17,
+          lineHeight: 1.7,
+          whiteSpace: "pre-line"
+        }}
+      >
         {story}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12 }}>
@@ -50,7 +63,12 @@ export default function StoryReader({
         {lang === "en" ? "🔊 Replay Teacher's Voice (0.9x)" : "🔊 Nghe lại giọng cô giáo (0.9x)"}
       </button>
       <button
-        onClick={() => window.location.reload()}
+        onClick={() => {
+          if (typeof window !== "undefined" && "speechSynthesis" in window) {
+            window.speechSynthesis.cancel();
+          }
+          window.location.reload();
+        }}
         style={{ padding: "12px", borderRadius: 12, background: "#000", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}
       >
         {lang === "en" ? "← Snap Next Story" : "← Chụp câu chuyện tiếp theo"}
