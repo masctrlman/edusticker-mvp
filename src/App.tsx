@@ -39,20 +39,35 @@ export default function App() {
       const res = await fetch("/api/story", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, childName, friendName, mode, lang })
+        body: JSON.stringify({
+          imageBase64: base64,
+          childName,
+          friendName,
+          mode,
+          lang
+        })
       });
       const data = await res.json();
 
-      if (data.overlapError) {
+      if (data.overlapError || data.overlap) {
         setErrorReason("overlap");
         setStep("error");
         return;
       }
 
-      const boxes = (data.stickers || []).map((s: any) => [s.xmin || 0, s.ymin || 0, s.xmax || 1000, s.ymax || 1000]);
+      const boxes = (data.stickers || []).map((s: any) =>
+        Array.isArray(s.box) ? s.box : [s.xmin ?? 0, s.ymin ?? 0, s.xmax ?? 1000, s.ymax ?? 1000]
+      );
       const crops = await cropStickersFromMasks(base64, boxes);
 
-      setStoryData(data);
+      const finalStickers =
+        Array.isArray(data.stickers) && data.stickers.length > 0
+          ? data.stickers
+          : crops.map((_, i) => ({
+              name: lang === "en" ? `Magic Sticker ${i + 1}` : `Hình dán phép thuật ${i + 1}`
+            }));
+
+      setStoryData({ ...data, stickers: finalStickers });
       setCroppedImages(crops);
       await saveStoryDualMode({ story: data.story, lesson: data.lesson, ts: Date.now() });
       setStep("story");
@@ -83,11 +98,21 @@ export default function App() {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <label style={{ display: "flex", flexDirection: "column", fontSize: 14, fontWeight: 600 }}>
             {lang === "en" ? "Child's First Name:" : "Tên của bé:"}
-            <input value={childName} onChange={(e) => setChildName(e.target.value)} maxLength={15} style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc", marginTop: 4 }} />
+            <input
+              value={childName}
+              onChange={(e) => setChildName(e.target.value)}
+              maxLength={15}
+              style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc", marginTop: 4 }}
+            />
           </label>
           <label style={{ display: "flex", flexDirection: "column", fontSize: 14, fontWeight: 600 }}>
             {lang === "en" ? "Friend's First Name:" : "Tên bạn cùng chơi:"}
-            <input value={friendName} onChange={(e) => setFriendName(e.target.value)} maxLength={15} style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc", marginTop: 4 }} />
+            <input
+              value={friendName}
+              onChange={(e) => setFriendName(e.target.value)}
+              maxLength={15}
+              style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc", marginTop: 4 }}
+            />
           </label>
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
             {(["funny", "teasing", "magic"] as const).map((m) => (
@@ -105,11 +130,21 @@ export default function App() {
                   cursor: "pointer"
                 }}
               >
-                {m === "funny" ? (lang === "en" ? "😂 Silly & Funny" : "😂 Vui Nhộn") : m === "teasing" ? (lang === "en" ? "😜 Playful Tease" : "😜 Hơi Trêu") : (lang === "en" ? "✨ Magic & Wonder" : "✨ Phép Thuật")}
+                {m === "funny"
+                  ? lang === "en"
+                    ? "😂 Silly & Funny"
+                    : "😂 Vui Nhộn"
+                  : m === "teasing"
+                  ? lang === "en"
+                    ? "😜 Playful Tease"
+                    : "😜 Hơi Trêu"
+                  : lang === "en"
+                  ? "✨ Magic & Wonder"
+                  : "✨ Phép Thuật"}
               </button>
             ))}
           </div>
-          <div style={{ marginTop: 16 }}>
+          <div style={{ marginTop: 12 }}>
             <CameraCapture onCapture={handleCapture} lang={lang} />
           </div>
         </div>
@@ -118,7 +153,9 @@ export default function App() {
       {step === "loading" && (
         <div style={{ textAlign: "center", padding: 40 }}>
           <p style={{ fontSize: 16, fontWeight: 600 }}>
-            {lang === "en" ? "✨ Kindergarten Teacher is reading your stickers and crafting a story..." : "✨ Đang nhờ cô giáo nhìn sticker và kể chuyện cho bé..."}
+            {lang === "en"
+              ? "✨ Kindergarten Teacher is looking at your stickers and crafting a magical story..."
+              : "✨ Đang nhờ cô giáo nhìn sticker và kể chuyện cổ tích cho bé..."}
           </p>
         </div>
       )}
@@ -126,7 +163,13 @@ export default function App() {
       {step === "error" && <RetakePopup reason={errorReason} onRetry={() => setStep("capture")} lang={lang} />}
 
       {step === "story" && storyData && (
-        <StoryReader story={storyData.story} stickers={storyData.stickers} crops={croppedImages} lesson={storyData.lesson} lang={lang} />
+        <StoryReader
+          story={storyData.story}
+          stickers={storyData.stickers}
+          crops={croppedImages}
+          lesson={storyData.lesson}
+          lang={lang}
+        />
       )}
     </div>
   );
