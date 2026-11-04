@@ -16,13 +16,49 @@ export default function StoryReader({
 }) {
   function speakAsTeacher(text: string) {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
+    const synth = window.speechSynthesis;
+    synth.cancel();
+
     const cleanText = text.replace(/\([^)]*\)/g, "");
     const u = new SpeechSynthesisUtterance(cleanText);
-    u.lang = lang === "en" ? "en-US" : "vi-VN";
+    const targetLang = lang === "en" ? "en-US" : "vi-VN";
+    u.lang = targetLang;
     u.rate = 0.9;
-    u.pitch = 1.1;
-    window.speechSynthesis.speak(u);
+    u.pitch = 1.15;
+
+    const pickFemaleVoice = () => {
+      const voices = synth.getVoices();
+      if (!voices.length) return;
+
+      const langPrefix = lang === "en" ? "en" : "vi";
+      const matchingVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
+
+      // Danh sách tên các giọng nữ chuẩn trên macOS/iOS, Chrome và Windows/Android
+      const femaleKeywords =
+        lang === "en"
+          ? ["samantha", "victoria", "karen", "moira", "tessa", "ava", "allison", "susan", "zira", "aria", "jenny", "google us english", "female"]
+          : ["linh", "hoaimy", "hoài my", "my", "google tiếng việt", "female", "nữ"];
+
+      const femaleVoice =
+        matchingVoices.find((v) =>
+          femaleKeywords.some((kw) => v.name.toLowerCase().includes(kw))
+        ) || matchingVoices[0];
+
+      if (femaleVoice) {
+        u.voice = femaleVoice;
+      }
+      synth.speak(u);
+    };
+
+    // Đảm bảo danh sách giọng đọc của Chrome đã nạp xong trước khi phát
+    if (synth.getVoices().length > 0) {
+      pickFemaleVoice();
+    } else {
+      synth.onvoiceschanged = () => {
+        synth.onvoiceschanged = null;
+        pickFemaleVoice();
+      };
+    }
   }
 
   useEffect(() => {
